@@ -48,7 +48,7 @@ namespace Covidsupportgroup
         private static List<string> remdesivirUniqueCities = new List<string>();
         private static List<string> cities = new List<string>();
         private static List<string> states = new List<string>();
-        private static List<string> csvFileHeaders = new List<string> { "Date", "Active threads", "Closed threads", "Oxygen", "Remdesivir", "HospitalBeds", "ICUBeds", "Plasma", "RT-PCR", "Important Emails" };
+        private static List<string> csvFileHeaders = new List<string> { "Date", "Active threads", "New threads today", "Closed threads", "Oxygen", "Remdesivir", "HospitalBeds", "ICUBeds", "Plasma", "RT-PCR", "Important Emails" };
         private static string applicationPath = "";
         private static string logFilePath = "";
         private static string logFileName = "";
@@ -56,10 +56,18 @@ namespace Covidsupportgroup
 
         public static int Main(string[] args)
         {
+            stringBuilder.AppendLine($"Task started at {DateTime.Now}");
             applicationPath = Directory.GetCurrentDirectory().Replace("\\bin\\Debug", "");
             logFileName = $"log-{GetTodaysDay()}.{GetTodaysMonth()}.txt";
-            logFilePath = Path.Combine(applicationPath, logFileName);
+            var logFilePathFolder = Path.Combine(@"C:\Users\aseemgoyal\OneDrive - Microsoft\Documents", "insights-result");
+
+            if (!Directory.Exists(logFilePathFolder)) {
+                Directory.CreateDirectory(logFilePathFolder);
+            }
+
+            logFilePath = Path.Combine(logFilePathFolder, logFileName);
             cities = File.ReadAllLines(Path.Combine(applicationPath, "list_of_cities_and_towns.txt")).ToList();
+            WriteLog();
             states = File.ReadAllLines(Path.Combine(applicationPath, "list_of_states.txt")).ToList();
             string folderName = ConfigurationManager.AppSettings.Get("folderName");
             try
@@ -107,6 +115,7 @@ namespace Covidsupportgroup
                 oItems.Sort("[ReceivedTime]", OlSortOrder.olAscending);
                 List<Outlook.MailItem> filteredEmails = filterLastXDaysEmail(oItems, emailsToFilterLookbackDays);
                 List<Outlook.MailItem> emailsReceivedToday = filterLastXDaysEmail(oItems, 1);
+                List<Outlook.MailItem> emailsReceivedLast15days = filterLastXDaysEmail(oItems, 15);
                 mailReceivedToday = emailsReceivedToday.Count;
                 int emailCount = 0;
                 foreach (Outlook.MailItem oMsg in filteredEmails)
@@ -127,10 +136,11 @@ namespace Covidsupportgroup
 
                 stringBuilder.AppendLine($"Total emails to scan = {emailCount}");
                 Dictionary<string, List<Outlook.MailItem>> conversations = Program.GroupByThread(filteredEmails);
+                Dictionary<string, List<Outlook.MailItem>> conversationsLast15days = Program.GroupByThread(emailsReceivedLast15days);
 
                 // Final insights
                 stringBuilder.AppendLine($"Emails received today = {emailsReceivedToday.Count}");
-                Program.findInsightsFromConversations(conversations);
+                Program.findInsightsFromConversations(conversations, conversationsLast15days);
             }
 
             //Error handler.
@@ -148,8 +158,9 @@ namespace Covidsupportgroup
         private static List<Outlook.MailItem> filterLastXDaysEmail(Items oItems, int days)
         {
             List<Outlook.MailItem> keepEmails = new List<Outlook.MailItem>();
-                        int i = 0;
+            int i = 0;
             DateTime cutOffDate = DateTime.Now.Subtract(new TimeSpan(days, 0, 0, 0));
+            stringBuilder.AppendLine($"Appending emails sent after {cutOffDate.ToString()}");
             foreach (Outlook.MailItem oMsg in oItems){
                 if (oMsg.ReceivedTime.CompareTo(cutOffDate) > 0) {
                     keepEmails.Add(oMsg);
@@ -196,7 +207,7 @@ namespace Covidsupportgroup
             return SenderEmailAddress;
         }
 
-        private static void findInsightsFromConversations(Dictionary<string, List<Outlook.MailItem>> conversations)
+        private static void findInsightsFromConversations(Dictionary<string, List<Outlook.MailItem>> conversations, Dictionary<string, List<MailItem>> conversationsLast15days)
         {
             var uniqueThreads = conversations.Count;
             var oxygenCount = 0;
@@ -208,6 +219,7 @@ namespace Covidsupportgroup
             var importantCount = 0;
             var closedThreads = 0;
             var activeThreads = 0;
+            int newThreadsCreatedToday = findNewThreadCreatedToday(conversationsLast15days);
 
             foreach (KeyValuePair<string, List<Outlook.MailItem>> entry in conversations)
             {
@@ -218,23 +230,12 @@ namespace Covidsupportgroup
                 }
                 else activeThreads++;
 
-/*                // if the latest message in this conversation was sent before today, either it is closed or not replied to.
-                if (messages[0].ReceivedTime.Day < GetTodaysDay())
-                {
-                    //lastActivityBeforeToday.Add(messages[0].WebLink);
-                }
-                else if (messages[0].ReceivedTime.Day == GetTodaysDay())
-                {
-                    //activeToday.Add(messages[0].Links);
-                }
-*/
                 var isOxygenNeeded = findWordInThread(messages, "Oxygen");
                 var isRemdesivirNeeded = findWordInThread(messages, "Remdesivir");
                 var isHospitalBedNeeded = findWordInThread(messages, "hospital bed");
                 var isPlasmaNeeded = findWordInThread(messages, "plasma");
-                var isICUNeeded = findWordInThread(messages, "ICU bed");
+                var isICUNeeded = findWordInThread(messages, "ICU");
                 var isRtPCRNeeded = findWordInThread(messages, "rt pcr") || findWordInThread(messages, "rt-pcr");
-
                 // Find the city and increase city count    
                 Tuple<bool, string>  cityTuple = findKeywordInThread(messages, cities);
                 Tuple<bool, string>  stateTuple = findKeywordInThread(messages, states);
@@ -286,24 +287,26 @@ namespace Covidsupportgroup
             stringBuilder.AppendLine($" Today's date = {GetTodaysDay()}/{GetTodaysMonth()}");
             stringBuilder.AppendLine($" Active threads = {activeThreads}");
             stringBuilder.AppendLine($" Closed threads = {closedThreads}");
+            stringBuilder.AppendLine($" New threads created today = {newThreadsCreatedToday}");
             stringBuilder.AppendLine($" oxygenCount = {oxygenCount}");
             stringBuilder.AppendLine($" remdesivirCount = {remdesivirCount}");
             stringBuilder.AppendLine($" hospitalBedsCount = {hospitalBedsCount}");
             stringBuilder.AppendLine($" ICUBedsCount = {ICUBedsCount}");
             stringBuilder.AppendLine($" plasmaCount = {plasmaCount}");
             stringBuilder.AppendLine($" RT-PCRCount = {rtPCRCount}");
-            stringBuilder.AppendLine($" importantCount = {importantCount}");
+            stringBuilder.AppendLine($" importantThreadCount = {importantCount}");
             stringBuilder.AppendLine("\n\nHot cities:");
             printTopHitsDictionary(citiesCountMap, topCitiesCountNeeded);
-            stringBuilder.AppendLine("\n\nHot states:");
+            stringBuilder.AppendLine("\n\nHot states: [Not deriving which city is part of which state, just plain search in the email]");
             printTopHitsDictionary(stateCountMap, topStateCountNeeded);
             stringBuilder.AppendLine("\n\nOxygen is required in these cities:");
             printList(oxygenUniqueCities);
 
-            //{ "Date", "Emails received today", "Active threads", "Closed threads", "Oxygen", "Remdesivir", "HospitalBeds", "ICUBeds", "Plasma", "RT-PCR", "Important Emails" };
+            //{ "Date", "Emails received today", "New threads today" , "Active threads", "Closed threads", "Oxygen", "Remdesivir", "HospitalBeds", "ICUBeds", "Plasma", "RT-PCR", "Important Emails" };
             List<string> csvValues = new List<string>()
 ;           csvValues.Add($"{GetTodaysDay()}/{GetTodaysMonth()}");
             csvValues.Add(mailReceivedToday.ToString());
+            csvValues.Add(newThreadsCreatedToday.ToString());
             csvValues.Add(activeThreads.ToString());
             csvValues.Add(closedThreads.ToString());
             csvValues.Add(oxygenCount.ToString());
@@ -314,6 +317,20 @@ namespace Covidsupportgroup
             csvValues.Add(rtPCRCount.ToString());
             csvValues.Add(importantCount.ToString());
             WriteToCSV(csvValues);
+        }
+
+        // A new thread is created today if the 1st  email in the thread came today only. 
+        private static int findNewThreadCreatedToday(Dictionary<string, List<MailItem>> conversationsLast15days)
+        {
+            var threadCount = 0;
+            foreach (KeyValuePair<string, List<Outlook.MailItem>> entry in conversationsLast15days)
+            {
+                List<Outlook.MailItem> emails = entry.Value;
+                if (emails[emails.Count -1].SentOn.Day == GetTodaysDay()) {
+                    threadCount++;
+                }
+            }
+            return threadCount;
         }
 
         private static bool checkIfThreadClosed(List<MailItem> messages)
