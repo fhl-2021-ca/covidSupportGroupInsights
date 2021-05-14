@@ -57,7 +57,9 @@ namespace Covidsupportgroup
         public static int Main(string[] args)
         {
             stringBuilder.AppendLine($"Task started at {DateTime.Now}");
-            applicationPath = Directory.GetCurrentDirectory().Replace("\\bin\\Debug", "");
+            applicationPath = Assembly.GetExecutingAssembly().Location
+.Replace("\\bin\\Debug", "").Replace("\\Covidsupportgroup.exe", "");
+            Console.Write($"Root Directory : {applicationPath}");
             logFileName = $"log-{GetTodaysDay()}.{GetTodaysMonth()}.txt";
             var logFilePathFolder = Path.Combine(@"C:\Users\aseemgoyal\OneDrive - Microsoft\Documents", "insights-result");
 
