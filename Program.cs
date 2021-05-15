@@ -56,24 +56,26 @@ namespace Covidsupportgroup
 
         public static int Main(string[] args)
         {
-            stringBuilder.AppendLine($"Task started at {DateTime.Now}");
-            applicationPath = Assembly.GetExecutingAssembly().Location
-.Replace("\\bin\\Debug", "").Replace("\\Covidsupportgroup.exe", "");
-            Console.Write($"Root Directory : {applicationPath}");
-            logFileName = $"log-{GetTodaysDay()}.{GetTodaysMonth()}.txt";
-            var logFilePathFolder = Path.Combine(@"C:\Users\aseemgoyal\OneDrive - Microsoft\Documents", "insights-result");
-
-            if (!Directory.Exists(logFilePathFolder)) {
-                Directory.CreateDirectory(logFilePathFolder);
-            }
-
-            logFilePath = Path.Combine(logFilePathFolder, logFileName);
-            cities = File.ReadAllLines(Path.Combine(applicationPath, "list_of_cities_and_towns.txt")).ToList();
-            WriteLog();
-            states = File.ReadAllLines(Path.Combine(applicationPath, "list_of_states.txt")).ToList();
-            string folderName = ConfigurationManager.AppSettings.Get("folderName");
             try
             {
+                stringBuilder.AppendLine($"Task started at {DateTime.Now}");
+                applicationPath = Assembly.GetExecutingAssembly().Location.Replace("\\bin\\Debug", "").Replace("\\Covidsupportgroup.exe", "");
+                Console.Write($"Root Directory : {applicationPath}");
+                logFileName = $"log-{GetTodaysDay()}.{GetTodaysMonth()}.txt";
+                var logFilePathFolder = Path.Combine(@"C:\Users\aseemgoyal\OneDrive - Microsoft\Documents", "insights-result");
+
+                if (!Directory.Exists(logFilePathFolder))
+                {
+                    Directory.CreateDirectory(logFilePathFolder);
+                }
+
+                logFilePath = Path.Combine(logFilePathFolder, logFileName);
+                cities = File.ReadAllLines(Path.Combine(applicationPath, "list_of_cities_and_towns.txt")).ToList();
+                states = File.ReadAllLines(Path.Combine(applicationPath, "list_of_states.txt")).ToList();
+                string folderName = ConfigurationManager.AppSettings.Get("folderName");
+
+                WriteLog();
+
                 emailsToFilterLookbackDays = Int32.Parse(ConfigurationManager.AppSettings.Get("emailsToFilterLookbackDays"));
                 topCitiesCountNeeded = Int32.Parse(ConfigurationManager.AppSettings.Get("topCitiesCountNeeded"));
                 topStateCountNeeded = Int32.Parse(ConfigurationManager.AppSettings.Get("topStateCountNeeded"));
@@ -149,11 +151,12 @@ namespace Covidsupportgroup
             catch (System.Exception e)
             {
                 Console.WriteLine("{0} Exception caught: ", e);
+                stringBuilder.AppendLine(e.StackTrace);
             }
 
             WriteLog();
             Console.WriteLine("Program executed successfully. Press any key to exit.");
-            Console.ReadLine();
+            //Console.ReadLine();
             return 0;
         }
 
