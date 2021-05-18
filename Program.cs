@@ -48,9 +48,10 @@ namespace Covidsupportgroup
         private static List<string> remdesivirUniqueCities = new List<string>();
         private static List<string> cities = new List<string>();
         private static List<string> states = new List<string>();
-        private static List<string> csvFileHeaders = new List<string> { "Date", "Active threads", "New threads today", "Closed threads", "Oxygen", "Remdesivir", "HospitalBeds", "ICUBeds", "Plasma", "RT-PCR", "Important Emails" };
+        private static List<string> csvFileHeaders = new List<string> { "Date", "Emails received today", "Active threads", "New threads today", "Closed threads", "Oxygen", "Remdesivir", "HospitalBeds", "ICUBeds", "Plasma", "RT-PCR", "Important Emails" };
         private static string applicationPath = "";
         private static string logFilePath = "";
+        private static string logFilePathFolder = "";
         private static string logFileName = "";
         private static StringBuilder stringBuilder = new StringBuilder();
 
@@ -62,7 +63,8 @@ namespace Covidsupportgroup
                 applicationPath = Assembly.GetExecutingAssembly().Location.Replace("\\bin\\Debug", "").Replace("\\Covidsupportgroup.exe", "");
                 Console.Write($"Root Directory : {applicationPath}");
                 logFileName = $"log-{GetTodaysDay()}.{GetTodaysMonth()}.txt";
-                var logFilePathFolder = Path.Combine(@"C:\Users\aseemgoyal\OneDrive - Microsoft\Documents", "insights-result");
+                var resultsPath = ConfigurationManager.AppSettings.Get("resultsPath");
+                logFilePathFolder = Path.Combine(resultsPath, "insights-result");
 
                 if (!Directory.Exists(logFilePathFolder))
                 {
@@ -143,7 +145,7 @@ namespace Covidsupportgroup
                 Dictionary<string, List<Outlook.MailItem>> conversationsLast15days = Program.GroupByThread(emailsReceivedLast15days);
 
                 // Final insights
-                stringBuilder.AppendLine($"Emails received today = {emailsReceivedToday.Count}");
+                stringBuilder.AppendLine($"Emails received today from = {DateTime.Now.Subtract(new TimeSpan(1, 0, 0, 0))} to {DateTime.Now} = {emailsReceivedToday.Count}");
                 Program.findInsightsFromConversations(conversations, conversationsLast15days);
             }
 
@@ -171,15 +173,16 @@ namespace Covidsupportgroup
                     keepEmails.Add(oMsg);
                 }
                 else {
-                    stringBuilder.AppendLine($"Removing message with subject {oMsg.Subject}");
+                    //stringBuilder.AppendLine($"Removing message with subject {oMsg.Subject}");
                 }
                 i++;
             }
             return keepEmails;
         }
 
-        private static void GetSMTPAddressForRecipients(Outlook.MailItem mail)
+        private static List<string> GetSMTPAddressForRecipients(Outlook.MailItem mail)
         {
+            List<string> recepients = new List<string>();
             const string PR_SMTP_ADDRESS =
                 "http://schemas.microsoft.com/mapi/proptag/0x39FE001E";
             Outlook.Recipients recips = mail.Recipients;
@@ -188,9 +191,12 @@ namespace Covidsupportgroup
                 Outlook.PropertyAccessor pa = recip.PropertyAccessor;
                 string smtpAddress =
                     pa.GetProperty(PR_SMTP_ADDRESS).ToString();
-                stringBuilder.AppendLine(recip.Name + " SMTP=" + smtpAddress);
+                  //stringBuilder.AppendLine(recip.Name + " SMTP=" + smtpAddress);
+                recepients.Add(smtpAddress);
             }
+            return recepients;
         }
+
         private static string getSenderEmailAddress(Outlook.MailItem mail)
         {
             Outlook.AddressEntry sender = mail.Sender;
@@ -235,19 +241,27 @@ namespace Covidsupportgroup
                 }
                 else activeThreads++;
 
-                var isOxygenNeeded = findWordInThread(messages, "Oxygen");
+                var isOxygenNeeded = findWordInThread(messages, "Oxygen cylinder") || findWordInThread(messages, "Oxygen concentrator");
                 var isRemdesivirNeeded = findWordInThread(messages, "Remdesivir");
-                var isHospitalBedNeeded = findWordInThread(messages, "hospital bed");
+                var isHospitalBedNeeded = findWordInThread(messages, "hospital bed") || findWordInThread(messages, "oxygen bed");
                 var isPlasmaNeeded = findWordInThread(messages, "plasma");
-                var isICUNeeded = findWordInThread(messages, "ICU");
+                var isICUNeeded = findWordInThread(messages, "ICU") || findWordInThread(messages, "Ventilator");
                 var isRtPCRNeeded = findWordInThread(messages, "rt pcr") || findWordInThread(messages, "rt-pcr");
-                // Find the city and increase city count    
-                Tuple<bool, string>  cityTuple = findKeywordInThread(messages, cities);
-                Tuple<bool, string>  stateTuple = findKeywordInThread(messages, states);
-                countHotCitiesOrState(cityTuple, citiesCountMap, messages);
-                countHotCitiesOrState(stateTuple, stateCountMap, messages);
 
-                if(isOxygenNeeded && cityTuple.Item1 && !oxygenUniqueCities.Contains(cityTuple.Item2)) {
+                // Take care of hyderabad group here... most of the times they do not mention Hyderabad in email
+                Tuple<bool, string>  cityTuple = findKeywordInThread(messages, cities);
+                if(cityTuple.Item1 == false) {
+                  // may be hyderabad
+                  if(isSentToHyderabadGroup(messages)) {
+                        stringBuilder.AppendLine("Email was sent to Hyderabad group, but did not include Hyderabad in body, adding it explicitly");
+                        cityTuple = new Tuple<bool, string>(true, "Hyderabad");
+                  }
+                }
+                countHotCitiesOrState(cityTuple, citiesCountMap, messages);
+                  //Tuple<bool, string>  stateTuple = findKeywordInThread(messages, states);
+                  //countHotCitiesOrState(stateTuple, stateCountMap, messages);
+
+                if (isOxygenNeeded && cityTuple.Item1 && !oxygenUniqueCities.Contains(cityTuple.Item2)) {
                     oxygenUniqueCities.Add(cityTuple.Item2);
                 }
 
@@ -289,30 +303,33 @@ namespace Covidsupportgroup
                 }
             }
 
-            stringBuilder.AppendLine($" Today's date = {GetTodaysDay()}/{GetTodaysMonth()}");
-            stringBuilder.AppendLine($" Active threads = {activeThreads}");
-            stringBuilder.AppendLine($" Closed threads = {closedThreads}");
-            stringBuilder.AppendLine($" New threads created today = {newThreadsCreatedToday}");
-            stringBuilder.AppendLine($" oxygenCount = {oxygenCount}");
+            stringBuilder.AppendLine($" \n\nStats : ");
+            stringBuilder.AppendLine($" \n\n Today's date = {GetTodaysDay()}/{GetTodaysMonth()}");
+            stringBuilder.AppendLine($" Program runs on emails from = {DateTime.Now.Subtract(new TimeSpan(emailsToFilterLookbackDays, 0, 0, 0))} to {DateTime.Now} for most data.");
+            stringBuilder.AppendLine($" Total threads uniqueThreads = {uniqueThreads}");
+            stringBuilder.AppendLine($" Active threads [which do not have \"closed\" in subject] = {activeThreads}");
+            stringBuilder.AppendLine($" Closed threads [which do have \"closed\" in subject] = {closedThreads}");
+            stringBuilder.AppendLine($" New threads created today [If the 1st  email in the thread came today only. ] = {newThreadsCreatedToday}");
+            stringBuilder.AppendLine($" oxygenCount [cylinder or concentrator] = {oxygenCount}");
             stringBuilder.AppendLine($" remdesivirCount = {remdesivirCount}");
-            stringBuilder.AppendLine($" hospitalBedsCount = {hospitalBedsCount}");
-            stringBuilder.AppendLine($" ICUBedsCount = {ICUBedsCount}");
+            stringBuilder.AppendLine($" hospitalBedsCount [hospital bed OR oxygen bed] = {hospitalBedsCount}");
+            stringBuilder.AppendLine($" ICUBedsCount [ICU or ventilator] = {ICUBedsCount}");
             stringBuilder.AppendLine($" plasmaCount = {plasmaCount}");
             stringBuilder.AppendLine($" RT-PCRCount = {rtPCRCount}");
-            stringBuilder.AppendLine($" importantThreadCount = {importantCount}");
-            stringBuilder.AppendLine("\n\nHot cities:");
+            stringBuilder.AppendLine($" importantThreadCount [Any email which has high importance, and we need to respond fast]= {importantCount}");
+            stringBuilder.AppendLine("\n\nHot cities: [by total number of emails]");
             printTopHitsDictionary(citiesCountMap, topCitiesCountNeeded);
-            stringBuilder.AppendLine("\n\nHot states: [Not deriving which city is part of which state, just plain search in the email]");
+/*            stringBuilder.AppendLine("\n\nHot states: [Not deriving which city is part of which state, just plain search in the email]");
             printTopHitsDictionary(stateCountMap, topStateCountNeeded);
+*/            
             stringBuilder.AppendLine("\n\nOxygen is required in these cities:");
             printList(oxygenUniqueCities);
 
-            //{ "Date", "Emails received today", "New threads today" , "Active threads", "Closed threads", "Oxygen", "Remdesivir", "HospitalBeds", "ICUBeds", "Plasma", "RT-PCR", "Important Emails" };
             List<string> csvValues = new List<string>()
 ;           csvValues.Add($"{GetTodaysDay()}/{GetTodaysMonth()}");
             csvValues.Add(mailReceivedToday.ToString());
-            csvValues.Add(newThreadsCreatedToday.ToString());
             csvValues.Add(activeThreads.ToString());
+            csvValues.Add(newThreadsCreatedToday.ToString());
             csvValues.Add(closedThreads.ToString());
             csvValues.Add(oxygenCount.ToString());
             csvValues.Add(remdesivirCount.ToString());
@@ -324,23 +341,41 @@ namespace Covidsupportgroup
             WriteToCSV(csvValues);
         }
 
-        // A new thread is created today if the 1st  email in the thread came today only. 
-        private static int findNewThreadCreatedToday(Dictionary<string, List<MailItem>> conversationsLast15days)
-        {
-            var threadCount = 0;
-            foreach (KeyValuePair<string, List<Outlook.MailItem>> entry in conversationsLast15days)
+            private static bool isSentToHyderabadGroup(List<MailItem> messages)
             {
-                List<Outlook.MailItem> emails = entry.Value;
-                if (emails[emails.Count -1].SentOn.Day == GetTodaysDay()) {
-                    threadCount++;
+                foreach (Outlook.MailItem message in messages){
+                        if (isSentToHyderabadGroup(message))
+                              return true;
                 }
+                  return false;
             }
-            return threadCount;
-        }
+
+            private static bool isSentToHyderabadGroup(MailItem mailItem)
+            {
+                  List<string> toList = GetSMTPAddressForRecipients(mailItem);
+                  return toList.Contains("HydCovidSupportGroup@service.microsoft.com");
+            }
+
+            // A new thread is created today if the 1st  email in the thread came today only. 
+            private static int findNewThreadCreatedToday(Dictionary<string, List<MailItem>> conversationsLast15days)
+            {
+                  var threadCount = 0;
+                  foreach (KeyValuePair<string, List<Outlook.MailItem>> entry in conversationsLast15days)
+                  {
+                      List<Outlook.MailItem> emails = entry.Value;
+                      if (emails[emails.Count -1].SentOn.Day == GetTodaysDay()) {
+                          threadCount++;
+                      }
+                  }
+                  return threadCount;
+              }
 
         private static bool checkIfThreadClosed(List<MailItem> messages)
         {
-            if (isWordMatch(messages[0].Subject, "closed"))
+            if(string.IsNullOrEmpty(messages[0].Subject)){
+                stringBuilder.AppendLine($"Found null message subject. Received by : {messages[0].ReceivedByName}");
+            }
+            else if (isWordMatch(messages[0].Subject, "closed"))
                 return true;
             return false;
         }
@@ -362,7 +397,7 @@ namespace Covidsupportgroup
             }
             else
             {
-                stringBuilder.AppendLine($"Unable to find the city/state used in {messages[0].Subject}");
+                //stringBuilder.AppendLine($"Unable to find the city/state used in {messages[0].Subject}");
             }
         }
 
@@ -523,17 +558,22 @@ namespace Covidsupportgroup
 
         private static void WriteToCSV(List<string> data)
         {
-            string insightsFileName = Path.Combine(applicationPath, "insights.csv");
-            if (!File.Exists(insightsFileName)) {
-                using (StreamWriter sw = File.AppendText(insightsFileName)){
-                    sw.WriteLine(String.Join(",", csvFileHeaders.ToArray()));
-                }
-            } else {
-                using (StreamWriter sw = File.AppendText(insightsFileName))
-                {
-                    sw.WriteLine(String.Join(",", data.ToArray()));
-                }
+            string insightsFilePath = Path.Combine(logFilePathFolder, "insights.csv");
+                  if (!File.Exists(insightsFilePath))
+                  {
+                        using (StreamWriter sw = File.AppendText(insightsFilePath))
+                        {
+                              sw.WriteLine(String.Join(",", csvFileHeaders.ToArray()));
+                              sw.WriteLine(String.Join(",", data.ToArray()));
+                        }
+                  }
+                  else
+                  {
+                        using (StreamWriter sw = File.AppendText(insightsFilePath))
+                        {
+                              sw.WriteLine(String.Join(",", data.ToArray()));
+                        }
+                  }
             }
         }
     }
-}
